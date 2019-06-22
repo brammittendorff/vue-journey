@@ -6,4 +6,4 @@
 
 ## 目录
 
--[Vue.js 响应式原理](./docs/响应式原理.MarkDown)
+[Vue.js 响应式原理](./docs/响应式原理.MarkDown)
