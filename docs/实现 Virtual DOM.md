@@ -120,3 +120,40 @@ function render() {
   ]
 }
 ```
+
+然后将 VNode 进一步封装，就可以实现常用的产生 VNode 的方法。
+
+- 创建一个空节点
+
+```
+function createEmptyVNode() {
+  const node = new VNode();
+  node.text = '';
+  return node;
+}
+```
+
+- 创建一个文本节点
+  
+```
+function createTextNode(val) {
+  return new VNode(undefined, undefined, undefined, String(val));
+}
+```
+
+- 克隆一个 VNode 节点
+
+```
+function cloneVNode(node) {
+  const cloneVNode = new VNode(
+    node.tag,
+    node.data,
+    node.children,
+    node.text,
+    node.elm
+  );
+  return cloneVNode;
+}
+```
+
+总的来说，VNode 就是一个 JavaScript 对象，用 JavaScript 对象的属性来描述当前节点的一些状态，用 VNode 节点的形式来模拟一棵 Virtual DOM 树。
