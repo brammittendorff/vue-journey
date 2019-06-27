@@ -13,7 +13,7 @@
   <span v-for="item in sz">{{ item }}</span>
 </div>
 
-var html = '<div :class="c" class="demo" v-if="isShow"><span v-for="item in sz">{{ item }}</span></div>
+var html = '<div :class="c" class="demo" v-if="isShow"><span v-for="item in sz">{{ item }}</span></div>'
 ```
 
 ## parse
@@ -82,26 +82,86 @@ var html = '<div :class="c" class="demo" v-if="isShow"><span v-for="item in sz">
 
 ```
 const ncname = '[a-zA-Z_][\\w\\-\\.]*';
-const singleAttrIdentifier = /([^\s"'<>/=]+)/
-const singleAttrAssign = /(?:=)/
+const singleAttrIdentifier = /([^\s"'<>/=]+)/;
+const singleAttrAssign = /(?:=)/;
 const singleAttrValues = [
   /"([^"]*)"+/.source,
   /'([^']*)'+/.source,
   /([^\s"'=<>`]+)/.source
-]
+];
+
+// /^\s*([^\s"'<>\/=]+)(?:\s*((?:=))\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'=<>`]+)))?/
 const attribute = new RegExp(
   '^\\s*' + singleAttrIdentifier.source +
   '(?:\\s*(' + singleAttrAssign.source + ')' +
   '\\s*(?:' + singleAttrValues.join('|') + '))?'
-)
+); 
 
-const qnameCapture = '((?:' + ncname + '\\:)?' + ncname + ')'
-const startTagOpen = new RegExp('^<' + qnameCapture)
-const startTagClose = /^\s*(\/?)>/
+const qnameCapture = '((?:' + ncname + '\\:)?' + ncname + ')';
 
-const endTag = new RegExp('^<\\/' + qnameCapture + '[^>]*>')
+// /^<((?:[a-zA-Z_][\w\-\.]*\:)?[a-zA-Z_][\w\-\.]*)/
+const startTagOpen = new RegExp('^<' + qnameCapture); 
 
-const defaultTagRE = /\{\{((?:.|\n)+?)\}\}/g
+// /^\s*(\/?)>/
+const startTagClose = /^\s*(\/?)>/;
 
-const forAliasRE = /(.*?)\s+(?:in|of)\s+(.*)/
+// /^<\/((?:[a-zA-Z_][\w\-\.]*\:)?[a-zA-Z_][\w\-\.]*)[^>]*
+const endTag = new RegExp('^<\\/' + qnameCapture + '[^>]*>'); 
+
+// /\{\{((?:.|\n)+?)\}\}/g
+const defaultTagRE = /\{\{((?:.|\n)+?)\}\}/g;
+
+// /(.*?)\s+(?:in|of)\s+(.*)/
+const forAliasRE = /(.*?)\s+(?:in|of)\s+(.*)/;
 ```
+
+### advance
+
+解析 template 采用循环进行字符串匹配的方式，所以没匹配解析完一段，我们需要将已经匹配过的去掉，头部的指针指向接下来需要匹配的部分。
+
+```
+function advance(n) {
+  index += n;
+  html = html.substring(n);
+}
+```
+
+ex：
+
+当我们把第一个 div 的头标签全部匹配完毕以后，我们需要将这部分除去，也就是向右移动 43 个字符。
+
+<img src="../images/parse-start.png">
+
+调用 `advance` 函数 `advance(43)`，向右移动
+
+<img src="../images/parse-doing.png">
+
+### parseHTML
+
+首先定义一个 `parseHTML` 函数，用于循环解析 template 字符串。
+
+```
+function parseHTML() {
+  while (html) {
+    let textEnd = html.indexOf('<');
+    if (textEnd === 0) {
+      if (html.match(endTag)) {
+        // ... process end tag
+        continue;
+      }
+      if (html.match(startTagOpen)) {
+        // ... process start tag
+        continue;
+      }
+    } else {
+      // ... process text
+      continue;
+    }
+  } 
+}
+```
+
+`parseHTML` 会用 `while` 来循环解析 template，当匹配到**标签头、标签尾以及文本**的时候进行不同的处理。直到整个 template 被解析完毕。
+
+- [ ] 为了生成 AST，解析的时候需要做哪些处理？
+  
