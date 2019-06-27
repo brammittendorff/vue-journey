@@ -165,3 +165,88 @@ function parseHTML() {
 
 - [ ] 为了生成 AST，解析的时候需要做哪些处理？
   
+### parseStartTag
+
+`parseStartTag` 用来解析起始标签（`"<div :class="c" class="demo" v-if="isShow">"` 部分的内容）。
+
+```
+function parseStartTag() {
+  const start = html.match(startTagOpen);
+  // 匹配到起始标签
+  if (start) {
+    const match = {
+      tagName: start[1], // 标签名称
+      attrs: [], // 存放标签内的属性
+      start: index
+    };
+    advance(start[0].length);
+
+    let end, attr;
+    // 解析内部所有的属性
+    while (!(end = html.match(startTagClose)) && (attr = html.match(attribute))) {
+      advance(attr[0].length);
+      match.attr.push({
+        name: attr[1],
+        value: attr[3],
+      })
+    }
+    if (end) {
+      match.unarySlash = end[1];
+      advance(end[0].length);
+      match.end = index;
+      return match;
+    }
+  }
+} 
+```
+
+### stack
+
+此外，我们需要维护一个 **stack** 栈来保存已经解析好的标签头，这样我们可以在解析尾部标签的时候得到所属的层级关系以及父标签。同时这里定义一个 `currentParent` 变量来存放当前标签的父标签节点的引用，`root` 变量用来指向根标签节点。
+
+```
+const stack = [];
+let currentParent, root;
+```
+
+知道这个以后，这里优化一下 `parseHTML`，在 `startTagOpen` 的 `if` 逻辑中加上新的处理。
+
+```
+if (html.match(startTagOpen)) {
+  const startTagMatch = parseStartTag();
+  // 封装成element，这就是最终形成的AST的节点
+  const element = {
+    type: 1,
+    tag: startTagMatch.tagName,
+    lowerCasedTag: startTagMatch.tagName.toLowerCase(),
+    attrsList: startTagMatch.attrs,
+    attrsMap: makeAttrsMap(startTagMatch.attrs),
+    parent: currentParent,
+    children: []
+  }
+
+  // root指向根节点的引用
+  if (!root) {
+    root = element;
+  }
+
+  // 当前节点放入父节点currentParent的children中
+  if (currentParent) {
+    currentParent.children.push(element);
+  }
+
+  // 将当前节点element压入stack中，并将currentParent指向当前节点
+  stack.push(element);
+  currentParent = element;
+  continue;
+}
+
+function makeAttrsMap(attrs) {
+  const map = {};
+  for (let i = 0; i < attrs.length; i++) {
+    map[attrs[i].name] = attrs[i].value;
+  }
+  return map;
+}
+```
+
