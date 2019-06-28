@@ -241,6 +241,9 @@ if (html.match(startTagOpen)) {
   continue;
 }
 
+/**
+ * 将attrs转换成map格式
+ */
 function makeAttrsMap(attrs) {
   const map = {};
   for (let i = 0; i < attrs.length; i++) {
@@ -249,4 +252,227 @@ function makeAttrsMap(attrs) {
   return map;
 }
 ```
+
+### parseEndTag
+
+同样，在 `parseHTML` 中加入对尾标签的解析函数，为了匹配如 `</div>`
+
+```
+const endTagMatch = html.match(endTag);
+if (endTagMatch) {
+  advance(endTagMatch[0].length);
+  parseEndTag(endTagMatch[1]);
+  continue;
+}
+```
+
+用 `parseEndTag` 来解析尾标签，它会从 stack 栈中取出**最近的、跟自己标签名一致的**元素，将 `currentParent` 指向那个元素，并将该元素之前的元素都从 stack 中出栈。
+
+- [X] 解析尾元素的时候，为什么不是取出 stack 栈上的最上面的一个元素才对嘛？
+    
+  这里面有一些比较特殊的情况，比如可能会存在自闭合的标签，如 `<br/>`，或者写了`<span>` 但是没有加上 `</span>` 的情况，这时候就要找到 stack 中的第二个位置才能找到同名的标签了。
+
+```
+function parseEndTag(tagName) {
+  let pos;
+  for (pos = stack.length - 1; pos >= 0; pos--) {
+    if (stack[pos].lowerCaseTag === tagName.toLowerCase()) {
+      break;
+    }
+  }
+
+  if (pos >= 0) {
+    stack.length = pos;
+    currentParent = stack[pos]; // stack[pos - 1] ?
+  }
+}
+```
+
+### parseText
+
+最后是解析文本，这个比较简单，只需要将文本取出，这时候有两种情况
+
+1. 是普通文本。直接构建一个节点 push 进当前 `currentParent` 的 `children` 中即可。
+2. Vue.js 表达式。例如 `{{item}}`，这个时候需要用 `parseText` 来将表达式转化成代码。
+   
+```
+text = html.substring(0, textEnd);
+advance(textEnd);
+
+let expression;
+if (expression = parseText(text)) {
+  currentParent.children.push({
+    type: 2,
+    text,
+    expression
+  });
+} else {
+  currentParent.children.push({
+    type: 3,
+    text,
+  })
+}
+
+/**
+ * 将表达式转化成代码
+ */
+function parseText(text) {
+  if (!defaultTagRE.test(text)) return;
+
+  const tokens = [];
+  let lastIndex = defaultTagRE.lastIndex = 0;
+  let match, index;
+  while ((match = defaultTagRE.exec(text))) {
+    index = match.index;
+
+    // 表达式前面的普通文本直接push到tokens中
+    if (index > lastIndex) {
+      tokens.push(JSON.stringify(text.slice(lastIndex, index)));
+    }
+
+    const exp = match[1].trim();
+    tokens.push(`_s(${exp})`);
+    lastIndex = index + match[0].length;
+  }
+
+  // 表达式后面的普通文本直接push到tokens中
+  if (lastIndex < text.length) {
+    tokens.push(JSON.stringify(text.slice(lastIndex)));
+  }
+  return tokens.join('+');
+}
+```
+
+这里使用一个 `tokens` 数组来存放解析结果，通过 `defaultTagRE` 来循环匹配文本，如果是普通文本则直接 `push` 到 `tokens` 数组中去，如果是表达式（`{{item}}`），则转换成 `_s(${exp})` 的形式。
+
+ex：
+
+```
+<div>hello,{{name}}.</div>
+
+/**
+ * defaultTagRE.exec('hello,{{name}}.')
+ * 0: "{{item}}"
+ * 1: "item"
+ * groups: undefined
+ * index: 6
+ * input: "hello,{{item}}."
+ */
+
+// 得到的tokens
+tokens = ['hello,', _s(name), '.'];
+
+// tokens.join('+')返回的结果
+'hello,' + _s(name) + '.';
+```
+
+### processIf 和 processFor
+
+最后介绍一下如何处理 `v-if` 以及 `v-for` 这样的 Vue.js 表达式，这里只简单的解析一下两个示例中用到的表达式的解析。
+
+我们只需要在解析头部标签的内容中加入这两个表达式的解析函数即可，在这时 `v-for` 之类指令已经在属性解析时存入了 `attrsMap` 了。
+
+```
+if (html.match(startTagOpen)) {
+  const startTagMatch = parseStartTag();
+  // 封装成element，这就是最终形成的AST的节点
+  const element = {
+    type: 1,
+    tag: startTagMatch.tagName,
+    lowerCasedTag: startTagMatch.tagName.toLowerCase(),
+    attrsList: startTagMatch.attrs,
+    attrsMap: makeAttrsMap(startTagMatch.attrs),
+    parent: currentParent,
+    children: []
+  }
+
+  processIf(element);
+  processFor(element);
+
+  // root指向根节点的引用
+  if (!root) {
+    root = element;
+  }
+
+  // 当前节点放入父节点currentParent的children中
+  if (currentParent) {
+    currentParent.children.push(element);
+  }
+
+  // 将当前节点element压入stack中，并将currentParent指向当前节点
+  stack.push(element);
+  currentParent = element;
+  continue;
+}
+```
+
+首先，这里需要定义一个 `getAndRemoveAttr` 函数，用来从 `el` 的 `attrsMap` 属性或是 `attrsList` 属性中取出 `name` 对应的值。
+
+```
+function getAndRemoveAttr(el, name) {
+  let val;
+  if ((val = el.attrsMap[name]) != null) {
+    const list = el.attrsList;
+    for (let i = 0, l = list.length; i < l; i++) {
+      if (list[i].name === name) {
+        // 将它删除
+        list.splice(i, 1);
+        break;
+      }
+    }
+  }
+  return val;
+}
+```
+
+ex：
+
+```
+// 解析实例中的 div 标签属性
+getAndRemoveAttr(el, 'v-for');
+
+// 得到的结果
+val = "item in sz";
+```
+
+有了 `getAndRemoveAttr` 这个函数之后，我们就可以开始进行 `processIf` 和 `processFor` 了。
+
+```
+function processIf(el) {
+  const exp = getAndRemoveAttr(el, 'v-if');
+  if (exp) {
+    el.if = exp;
+    if (!el.ifConditions) {
+      el.ifConditions = [];
+    }
+    el.ifConditions.push({
+      exp: exp,
+      block: el
+    });
+  }
+}
+
+function processFor(el) {
+  const exp = getAndRemove(el, 'v-for');
+  if (exp) {
+    const inMatch = exp.match(forAliasRE);
+    el.for = inMatch[2].trim();
+    el.alias = inMatch[1].trim();
+  }
+}
+
+/**
+ * 'item in sz'.match(forAliasRE)
+ * 0: "item in sz"
+ * 1: "item"
+ * 2: "sz"
+ * groups: undefined
+ * index: 0
+ * input: "item in sz
+ */
+```
+
+到这里，已经把 `parse` 的过程介绍完了。
+
+## optimize
 
