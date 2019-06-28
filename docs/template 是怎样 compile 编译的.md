@@ -476,3 +476,88 @@ function processFor(el) {
 
 ## optimize
 
+`optimize` 主要作用跟它名字一样，用作**优化**。
+
+这个涉及到后面要讲 `patch` 的过程，因为 `patch` 的过程实际上是将 VNode 节点进行一层一层的比对，然后将**差异**更新到视图上。那么一些静态节点是不会根据数据变化而产生变化的，这些节点我们没有比对的需求，是不是可以跳过这些静态节点的比对，节省一些性能呢？
+
+那么我们就需要在静态节点上做一些**标记**，在 `patch` 的时候我们就可以直接跳过这些被标记的节点的比对，从而达到**优化**的目的。
+
+经过 `optimize` 这层的处理，每个节点会加上 `static` 属性，用来标记是否是静态的。
+
+```
+{
+  'attrsMap': {
+    ':class': 'c',
+    'class': 'demo',
+    'v-if': 'isShow'
+  },
+  'classBinding': 'c',
+  'if': 'isShow',
+  'ifConditions': [
+    'exp': 'isShow'
+  ],
+  'staticClass': 'demo',
+  'tag': 'div',
+  // 静态标记
+  'static': false,
+  'children': [
+    {
+      'attrsMap': {
+        'v-for': 'item in sz'
+      },
+      'static': false,
+      'alias': 'item',
+      'for': 'sz',
+      'forProcessed': true,
+      'tag': 'span',
+      'children': [
+        {
+          'expression': '_s(item)',
+          'text': '{{item}}',
+          'static': false
+        }
+      ]
+    }
+  ]
+}
+```
+
+接下来用代码实现以下 `optimize` 函数。
+
+### isStatic
+
+首先实现一个 `isStatic` 函数，传入一个 node，判断该 node 是否是静态节点。判断的标准是当 `type` 为 2 （表达式节点）则是非静态节点，当 `type` 为 3 （文本节点）的时候则是静态节点，当然，如果存在 `if` 或者 `for` 这样的条件的时候（表达式节点），也是非静态节点。
+
+```
+function isStatic(node) {
+  if (node.type === 2) {
+    return false;
+  }
+  if (node.type === 3) {
+    return true;
+  }
+  return (!node.if && !node.for);
+}
+```
+
+### markStatic
+
+`markStatic` 为所有的节点标记上 `static`，遍历所有节点通过 `isStatic` 函数来判断当前节点是否是静态节点。此外，会遍历当前节点的所有子节点，如果子节点是非静态节点，那么当前节点也是非静态节点。
+
+```
+function markStatic(node) {
+  node.static = isStatic(node);
+  if (node.type === 1) {
+    for (let i = 0, l = node.children.length; i < l; i++) {
+      const child = node.children[i];
+      markStatic(child);
+      if (!child.static) {
+        node.static = false;
+      }
+    }
+  }
+}
+```
+
+### markStaticRoots
+
