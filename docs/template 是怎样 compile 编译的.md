@@ -561,3 +561,209 @@ function markStatic(node) {
 
 ### markStaticRoots
 
+接下来是 `markStaticRoots` 函数，用来标记 `staticRoot` （静态根）。这个函数实现比较简单，简单来说，就是如果当前节点是静态节点，同时满足该节点并不是只有一个子节点且是文本节点（作者认为这种情况的优化消耗会大于收益）时，标记 `staticRoot` 为 `true`，否则为 `false`。
+
+```
+function markStaticRoots(node) {
+  if (node.type === 1) {
+    if (node.static &&
+    node.children.length &&
+    !(node.children.length === 1 && node.children[0].type === 3)
+    ) {
+      node.staticRoot = true;
+      return;
+    } else {
+      node.staticRoot = false;
+    }
+  }
+}
+```
+
+### optimize
+
+有了以上的函数，就可以实现 `optimize` 了。
+
+```
+function optimize(rootAst) {
+  markStatic(rootAst);
+  markStaticRoots(rootAst);
+}
+```
+
+## generate
+
+`generate` 会将 AST 转化成 `render function` 字符串，最终得到 render 的字符串以及 staticRenderFns 字符串。
+
+先来感受一下真实的 Vue.js 编译得到的结果。
+
+```
+with (this) {
+  return (isShow) ?
+  _c(
+    'div',
+    {
+      staticClass: 'demo',
+      class: c
+    },
+    _l(
+      (sz),
+      function(item) {
+        return _c('span', [_v(_s(item))])
+      }
+    )
+  )
+  : _e()
+}
+```
+
+看到这里可能会觉得很奇怪，`_c`，`_l` 到底是什么？其实他们是 Vue.js 对一些函数简写，比如说 `_c` 对应的是 `createElement` 这个函数。
+
+我们把它用 VNode 的形式写出来就很明白了。
+
+首先是第一层 div 节点。
+
+```
+render() {
+  return isShow
+    ? (new VNode('div', {
+        'staticClass': 'demo',
+        'class': c
+      }, [/*这里是子节点*/]))
+    : createEmptyVNode();
+}
+```
+
+然后我们在 `children` 中加上第二层 span 及其子文本节点。
+
+```
+/**
+ * 渲染v-for列表
+ */
+function renderList(val, render) {
+  let ret = new Array(val.length);
+  for (i = 0, l = val.length; i < l; i++) {
+    ret[i] = render(val[i], i);
+  }
+  return ret;
+}
+
+render() {
+  return isShow
+    ? (new VNode('div', {
+        'staticClass': 'demo',
+        'class': c
+      }, renderList(sz, (item) => {
+        return new VNode('span', {}, [createTextVNode(item)]);
+      })))
+    : createEmptyVNode();
+}
+```
+
+那我们怎样实现一个 `generate` 呢？
+
+### genIf
+
+首先实现一个处理 `if` 条件的 `genIf` 函数。
+
+```
+function genIf(el) {
+  el.ifProcessed = true;
+  if (!el.ifConditions.length) {
+    return '_e()';
+  }
+  return `(${el.ifConditions[0].exp})
+    ? ${genElement(el.ifConditions[0].block)}
+    : _e()`;
+}
+```
+
+### genFor
+
+然后是处理 `for` 循环的函数。
+
+```
+function genFor(el) {
+  el.forProcessed = true;
+
+  const exp = el.for;
+  const alias = el.alias;
+  const iterator1 = el.iterator1 ? `,${el.iterator1}` : '';
+  const iterator2 = el.iterator2 ? `,${el.iterator2}` : '';
+
+  return `_l((${exp}),` +
+    `function(${alias}${iterator1}${iterator2}){` +
+    `return ${genElement(el)}` +
+    `})`;
+}
+```
+
+### genText
+
+处理文本节点的函数。
+
+```
+function genText(el) {
+  return `_v(${el.expression})`;
+}
+```
+
+### genElement
+
+接下来是 `genElement`，它是一个处理节点的函数，因为它依赖于 `genChildren` 以及 `genNode`，所以这三个函数放在一起讲。
+
+`genElement` 会根据当前节点是否有 `if` 或者 `for` 标记然后判断是否要用 `genIf` 或者 `genFor` 处理。否则通过 `genChildren` 处理子节点，同时得到 `staticClass`、`class` 等属性。
+
+`genChildren` 比较简单，遍历所有子节点，通过 `genNode` 处理后用 "`,`" 隔开拼接成字符串。
+
+`genNode` 则根据 `type` 来判断该节点是用文本节点 `genText` 还是标签节点 `genElement` 来处理。
+
+```
+function genNode(el) {
+  if (el.type === 1) {
+    return genElement(el);
+  } else {
+    return genText(el);
+  }
+}
+
+function genChildren(el) {
+  const children = el.children;
+
+  if (children && children.length > 0) {
+    return `${children.map(genNode).join(',')}`;
+  }
+}
+
+function genElement(el) {
+  if (el.if && !el.ifProcessed) {
+    return genIf(el);
+  } else if (el.for && !el.Processed) {
+    return genFor(el);
+  } else {
+    const children = genChildren(el);
+    let code;
+    code = `_c('${el.tag},'{
+      staticClass: ${el.attrsMap && el.attrsMap[':class']},
+      class: ${el.attrsMap && el.attrsMap['class']},
+    }${
+      children ? `,${children}` : ''
+    })
+    return code;
+  }
+}
+```
+
+### generate
+
+最后我们使用上面的函数来实现 `generate`，只需要将整个 AST 传入后判断是否为空，为空则返回一个 div 标签，否则通过 `generate` 来处理。
+
+```
+function generate(rootAst) {
+  const code = rootAst ? genElement(rootAst) : '_c("div")';
+  return {
+    render: `with(this){return ${code}}`,
+  }
+}
+```
+
+经过 compile 之后，template 顺利转成了 `render function` 了。
