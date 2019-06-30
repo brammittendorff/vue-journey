@@ -1,3 +1,7 @@
+/**
+ * parse
+ */
+
 const singleAttrIdentifier = /([^\s"'<>/=])/;
 const singleAttrAssign = /(?:=)/;
 const singleAttrValues = [
@@ -84,3 +88,178 @@ function parseEndTag(tagName) {
     stack.length = pos;
   }
 }
+
+function parseText(text) {
+  if (!defaultTagRE.test(text)) return;
+
+  const tokens = [];
+  let lastIndex = defaultTagRE.lastIndex = 0;
+  let match, index;
+  while (match = defaultTagRE.exec(text)) {
+    index = match.index;
+
+    if (index >lastIndex) {
+      tokens.push(JSON.stringify(text.slice(lastIndex, index)));
+    }
+
+    const exp = match[1].trim();
+    tokens.push(`_s(${exp})`);
+    lastIndex = index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    tokens.push(JSON.stringify(text.slice(lastIndex)));
+  }
+
+  return tokens.join('+');
+}
+
+function getAndRemoveAttr(el, name) {
+  let val;
+  if ((val = el.attrsMap[name]) != null) {
+    const list = el.attrsList;
+    for (let i = 0, l = list.length; i < l; i++) {
+      if (list[i].name === name) {
+        list.splice(i, 1);
+        break;
+      }
+    }
+  }
+  return val;
+}
+
+function processFor(el) {
+  let exp;
+  if ((exp = getAndRemoveAttr(el, 'v-for'))) {
+    const inMatch = exp.match(forAliasRE);
+    el.for = inMatch[2].trim();
+    el.alias = inMatch[1].trim();
+  }
+}
+
+function processIf(el) {
+  const exp = getAndRemoveAttr(el, 'v-if');
+  if (exp) {
+    el.if = exp;
+    if (!el.ifConditions) {
+      el.ifConditions = [];
+    }
+    el.ifConditions.push({
+      exp: exp,
+      block: el
+    });
+  }
+}
+
+function parseHTML() {
+  while (html) {
+    let textEnd = html.indexOf('<');
+    if (textEnd === 0) {
+      const endTagMatch = html.match(endTag);
+      if (endTagMatch) {
+        advance(endTagMatch[0].length);
+        parseEndTag(endTagMatch[1]);
+        continue;
+      }
+
+      if (html.match(startTagOpen)) {
+        const startTagMatch = parseStartTag();
+        const element = {
+          type: 1,
+          tag: startTagMatch.tagName,
+          lowerCasedTag: startTagMatch.tagName.toLowerCase(),
+          attrsList: startTagMatch.attrs,
+          attrsMap: makeAttrsMap(startTagMatch.attrs),
+          parent: currentParent,
+          children: []
+        }
+
+        processIf(element);
+        processFor(element);
+  
+        if (!root) {
+          root.element;
+        }
+  
+        if (currentParent) {
+          currentParent.children.push(element);
+        }
+  
+        if (!startTagMatch.unarySlash) {
+          stack.push(element);
+          currentParent = element;
+        }
+        
+        continue;
+      }
+    } else {
+      text = html.substring(0, textEnd);
+      advance(textEnd);
+      let expression;
+      if (expression = parseText(text)) {
+        currentParent.children.push({
+          type: 2,
+          text,
+          expression, // tokens
+        });
+      } else {
+        currentParent.children.push({
+          type: 3,
+          text
+        });
+      }
+      continue;
+    }
+  }
+  return root;
+}
+
+function parse() {
+  return parseHTML();
+}
+
+/**
+ * optimize
+ */
+
+function isStatic(node) {
+  if (node.type === 2) {
+    return false;
+  }
+  if (node.type === 3) {
+    return true;
+  }
+  return (!node.if && !node.for);
+}
+
+function markStatic(node) {
+  node.static = isStatic(node);
+  if (node.type === 1) {
+    for (let i = 0, l = node.children.length; i < l; i++) {
+      const child = node.children[i];
+      markStatic(child);
+      if (!child.static) {
+        node.static = false;
+      }
+    }
+  }
+}
+
+function markStaticRoots(node) {
+  if (node.type === 1) {
+    if (node.static &&
+      node.children.length &&
+      !(node.children.length === 1 && node.children[0].type === 3)
+    ) {
+      node.staticRoot = true;
+    } else {
+      node.staticRoot = false;
+    }
+  }
+}
+
+function optimize(rootAst) {
+  markStatic(rootAst);
+  markStaticRoots(rootAst);
+}
+
