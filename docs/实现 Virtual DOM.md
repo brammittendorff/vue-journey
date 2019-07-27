@@ -66,7 +66,7 @@ class VNode {
 
 用 JavaScript 代码形式就是这样
 
-```
+```js
 function render() {
   return new VNode(
     'span',
@@ -92,7 +92,7 @@ function render() {
 
 看看转成的 VNode 以后的情况
 
-```
+```js
 {
   tag: 'span',
   data: {
@@ -125,7 +125,7 @@ function render() {
 
 - 创建一个空节点
 
-```
+```js
 function createEmptyVNode() {
   const node = new VNode();
   node.text = '';
@@ -135,7 +135,7 @@ function createEmptyVNode() {
 
 - 创建一个文本节点
   
-```
+```js
 function createTextNode(val) {
   return new VNode(undefined, undefined, undefined, String(val));
 }
@@ -143,7 +143,7 @@ function createTextNode(val) {
 
 - 克隆一个 VNode 节点
 
-```
+```js
 function cloneVNode(node) {
   const cloneVNode = new VNode(
     node.tag,

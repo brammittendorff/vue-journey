@@ -55,7 +55,7 @@
 
 ex：
 
-```
+```js
 {
   tag: 'div',
   children: [
@@ -71,7 +71,7 @@ ex：
 
 渲染后可以得到
 
-```
+```html
 <div>
   <a>click me</a>
 </div>

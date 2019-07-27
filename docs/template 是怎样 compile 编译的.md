@@ -8,7 +8,7 @@
 
 这里以一个 template 为例，通过这个示例的变化来看解析的过程。但是解析的过程及结果都是将主要的部分抽离出来了。
 
-```
+```html
 <div :class="c" class="demo" v-if="isShow">
   <span v-for="item in sz">{{ item }}</span>
 </div>
@@ -26,7 +26,7 @@ var html = '<div :class="c" class="demo" v-if="isShow"><span v-for="item in sz">
 
 这个过程比较复杂，会涉及很多的正则进行字符串解析，看一下得到的 AST 的样子。
 
-```
+```js
 {
   // 标签属性的map，记录了标签上的属性
   'attrsMap': {
@@ -80,7 +80,7 @@ var html = '<div :class="c" class="demo" v-if="isShow"><span v-for="item in sz">
 
 这里首先定义一些我们需要的正则
 
-```
+```js
 const ncname = '[a-zA-Z_][\\w\\-\\.]*';
 const singleAttrIdentifier = /([^\s"'<>/=]+)/;
 const singleAttrAssign = /(?:=)/;
@@ -119,7 +119,7 @@ const forAliasRE = /(.*?)\s+(?:in|of)\s+(.*)/;
 
 解析 template 采用循环进行字符串匹配的方式，所以没匹配解析完一段，我们需要将已经匹配过的去掉，头部的指针指向接下来需要匹配的部分。
 
-```
+```js
 function advance(n) {
   index += n;
   html = html.substring(n);
@@ -140,7 +140,7 @@ ex：
 
 首先定义一个 `parseHTML` 函数，用于循环解析 template 字符串。
 
-```
+```js
 function parseHTML() {
   while (html) {
     let textEnd = html.indexOf('<');
@@ -169,7 +169,7 @@ function parseHTML() {
 
 `parseStartTag` 用来解析起始标签（`"<div :class="c" class="demo" v-if="isShow">"` 部分的内容）。
 
-```
+```js
 function parseStartTag() {
   const start = html.match(startTagOpen);
   // 匹配到起始标签
@@ -204,14 +204,14 @@ function parseStartTag() {
 
 此外，我们需要维护一个 **stack** 栈来保存已经解析好的标签头，这样我们可以在解析尾部标签的时候得到所属的层级关系以及父标签。同时这里定义一个 `currentParent` 变量来存放当前标签的父标签节点的引用，`root` 变量用来指向根标签节点。
 
-```
+```js
 const stack = [];
 let currentParent, root;
 ```
 
 知道这个以后，这里优化一下 `parseHTML`，在 `startTagOpen` 的 `if` 逻辑中加上新的处理。
 
-```
+```js
 if (html.match(startTagOpen)) {
   const startTagMatch = parseStartTag();
   // 封装成element，这就是最终形成的AST的节点
@@ -257,7 +257,7 @@ function makeAttrsMap(attrs) {
 
 同样，在 `parseHTML` 中加入对尾标签的解析函数，为了匹配如 `</div>`
 
-```
+```js
 const endTagMatch = html.match(endTag);
 if (endTagMatch) {
   advance(endTagMatch[0].length);
@@ -272,7 +272,7 @@ if (endTagMatch) {
     
   这里面有一些比较特殊的情况，比如可能会存在自闭合的标签，如 `<br/>`，或者写了`<span>` 但是没有加上 `</span>` 的情况，这时候就要找到 stack 中的第二个位置才能找到同名的标签了。
 
-```
+```js
 function parseEndTag(tagName) {
   let pos;
   for (pos = stack.length - 1; pos >= 0; pos--) {
@@ -295,7 +295,7 @@ function parseEndTag(tagName) {
 1. 是普通文本。直接构建一个节点 push 进当前 `currentParent` 的 `children` 中即可。
 2. Vue.js 表达式。例如 `{{item}}`，这个时候需要用 `parseText` 来将表达式转化成代码。
    
-```
+```js
 text = html.substring(0, textEnd);
 advance(textEnd);
 
@@ -347,7 +347,7 @@ function parseText(text) {
 
 ex：
 
-```
+```js
 <div>hello,{{name}}.</div>
 
 /**
@@ -372,7 +372,7 @@ tokens = ['hello,', _s(name), '.'];
 
 我们只需要在解析头部标签的内容中加入这两个表达式的解析函数即可，在这时 `v-for` 之类指令已经在属性解析时存入了 `attrsMap` 了。
 
-```
+```js
 if (html.match(startTagOpen)) {
   const startTagMatch = parseStartTag();
   // 封装成element，这就是最终形成的AST的节点
@@ -408,7 +408,7 @@ if (html.match(startTagOpen)) {
 
 首先，这里需要定义一个 `getAndRemoveAttr` 函数，用来从 `el` 的 `attrsMap` 属性或是 `attrsList` 属性中取出 `name` 对应的值。
 
-```
+```js
 function getAndRemoveAttr(el, name) {
   let val;
   if ((val = el.attrsMap[name]) != null) {
@@ -427,7 +427,7 @@ function getAndRemoveAttr(el, name) {
 
 ex：
 
-```
+```js
 // 解析实例中的 div 标签属性
 getAndRemoveAttr(el, 'v-for');
 
@@ -437,7 +437,7 @@ val = "item in sz";
 
 有了 `getAndRemoveAttr` 这个函数之后，我们就可以开始进行 `processIf` 和 `processFor` 了。
 
-```
+```js
 function processIf(el) {
   const exp = getAndRemoveAttr(el, 'v-if');
   if (exp) {
@@ -484,7 +484,7 @@ function processFor(el) {
 
 经过 `optimize` 这层的处理，每个节点会加上 `static` 属性，用来标记是否是静态的。
 
-```
+```js
 {
   'attrsMap': {
     ':class': 'c',
@@ -528,7 +528,7 @@ function processFor(el) {
 
 首先实现一个 `isStatic` 函数，传入一个 node，判断该 node 是否是静态节点。判断的标准是当 `type` 为 2 （表达式节点）则是非静态节点，当 `type` 为 3 （文本节点）的时候则是静态节点，当然，如果存在 `if` 或者 `for` 这样的条件的时候（表达式节点），也是非静态节点。
 
-```
+```js
 function isStatic(node) {
   if (node.type === 2) {
     return false;
@@ -544,7 +544,7 @@ function isStatic(node) {
 
 `markStatic` 为所有的节点标记上 `static`，遍历所有节点通过 `isStatic` 函数来判断当前节点是否是静态节点。此外，会遍历当前节点的所有子节点，如果子节点是非静态节点，那么当前节点也是非静态节点。
 
-```
+```js
 function markStatic(node) {
   node.static = isStatic(node);
   if (node.type === 1) {
@@ -563,7 +563,7 @@ function markStatic(node) {
 
 接下来是 `markStaticRoots` 函数，用来标记 `staticRoot` （静态根）。这个函数实现比较简单，简单来说，就是如果当前节点是静态节点，同时满足该节点并不是只有一个子节点且是文本节点（作者认为这种情况的优化消耗会大于收益）时，标记 `staticRoot` 为 `true`，否则为 `false`。
 
-```
+```js
 function markStaticRoots(node) {
   if (node.type === 1) {
     if (node.static &&
@@ -583,7 +583,7 @@ function markStaticRoots(node) {
 
 有了以上的函数，就可以实现 `optimize` 了。
 
-```
+```js
 function optimize(rootAst) {
   markStatic(rootAst);
   markStaticRoots(rootAst);
@@ -596,7 +596,7 @@ function optimize(rootAst) {
 
 先来感受一下真实的 Vue.js 编译得到的结果。
 
-```
+```js
 with (this) {
   return (isShow) ?
   _c(
@@ -622,7 +622,7 @@ with (this) {
 
 首先是第一层 div 节点。
 
-```
+```js
 render() {
   return isShow
     ? (new VNode('div', {
@@ -635,7 +635,7 @@ render() {
 
 然后我们在 `children` 中加上第二层 span 及其子文本节点。
 
-```
+```js
 /**
  * 渲染v-for列表
  */
@@ -665,7 +665,7 @@ render() {
 
 首先实现一个处理 `if` 条件的 `genIf` 函数。
 
-```
+```js
 function genIf(el) {
   el.ifProcessed = true;
   if (!el.ifConditions.length) {
@@ -681,7 +681,7 @@ function genIf(el) {
 
 然后是处理 `for` 循环的函数。
 
-```
+```js
 function genFor(el) {
   el.forProcessed = true;
 
@@ -701,7 +701,7 @@ function genFor(el) {
 
 处理文本节点的函数。
 
-```
+```js
 function genText(el) {
   return `_v(${el.expression})`;
 }
@@ -717,7 +717,7 @@ function genText(el) {
 
 `genNode` 则根据 `type` 来判断该节点是用文本节点 `genText` 还是标签节点 `genElement` 来处理。
 
-```
+```js
 function genNode(el) {
   if (el.type === 1) {
     return genElement(el);
@@ -757,7 +757,7 @@ function genElement(el) {
 
 最后我们使用上面的函数来实现 `generate`，只需要将整个 AST 传入后判断是否为空，为空则返回一个 div 标签，否则通过 `generate` 来处理。
 
-```
+```js
 function generate(rootAst) {
   const code = rootAst ? genElement(rootAst) : '_c("div")';
   return {
