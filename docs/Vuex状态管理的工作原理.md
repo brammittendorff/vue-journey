@@ -51,7 +51,7 @@ function vuexInit() {
 }
 ```
 
-如果是根节点（`$options` 中存在 `store` 说明是根节点），则直接将 `options.store` 赋值给 `this.$store`。否则不明不是根节点，从父节点的 `$store` 中获取。
+如果是根节点（`$options` 中存在 `store` 说明是根节点），则直接将 `options.store` 赋值给 `this.$store`。否则说明不是根节点，从父节点的 `$store` 中获取。
 
 通过这步操作，我们已经可以在任意一个 vm 中通过 `this.$store` 来访问 `Store` 的实例了。
 
