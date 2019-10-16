@@ -1,6 +1,9 @@
 vue-test/.DS_Store
-vue-test/node_modules
 vue-test/dist
+vue-test/node_modules
+vue-src/node_modules
+vue-router-src/node_modules
+vuex-src/node_modules
 
 # local env files
 vue-test/.env.local
