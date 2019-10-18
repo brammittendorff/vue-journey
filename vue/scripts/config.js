@@ -26,7 +26,7 @@ const weexFactoryPlugin = {
 
 const aliases = require('./alias')
 const resolve = p => {
-  // 通过 '/' 分割陈数组，然后取第一个元素作为 base
+  // 通过 '/' 分割成数组，然后取第一个元素作为 base
   const base = p.split('/')[0]
   // 如果定义了别名
   // 则说明 base 不是实际的路径，它的真实路径借助别名的配置

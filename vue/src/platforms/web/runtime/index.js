@@ -31,9 +31,6 @@ extend(Vue.options.directives, platformDirectives)
 extend(Vue.options.components, platformComponents)
 
 // install platform patch function
-// 不同的平台，比如 web 和 weex 上定义不一样
-// 在 web 平台上，是否是服务端渲染也对这个方法有影响
-// 在浏览器端才指向 path 方法，其他为空函数
 Vue.prototype.__patch__ = inBrowser ? patch : noop
 
 // public mount method
