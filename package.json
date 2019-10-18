@@ -1,0 +1,33 @@
+{
+  "name": "vue-journey",
+  "version": "1.0.0",
+  "description": "Vue.js 源码学习",
+  "main": "index.js",
+  "dependencies": {
+    "vuepress": "^1.0.3"
+  },
+  "devDependencies": {
+    "gh-pages": "^2.1.1"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vuepress dev docs",
+    "build": "vuepress build docs",
+    "deploy": "gh-pages -d dist",
+    "deploy:build": "npm run build && gh-pages -d dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/niexias/vue-journey.git"
+  },
+  "keywords": [
+    "vue",
+    "note"
+  ],
+  "author": "yangjin",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/niexias/vue-journey/issues"
+  },
+  "homepage": "https://github.com/niexias/vue-journey#readme"
+}
